@@ -392,7 +392,7 @@ function logExpense(name,cat,amount){
 /* ============ render ============ */
 function render(){
   if(AU.recover){renderAuth('newpass');return}
-  if(!S){if(AU.view==='login'||AU.view==='forgot')renderAuth(AU.view);else renderOnboarding();return}
+  if(!S){if(['login','forgot','confirmed'].includes(AU.view))renderAuth(AU.view);else renderOnboarding();return}
   if(needsAccount()){renderAuth(AU.view||'signup');return}
   const s=$('#screen');
   const y=s.scrollTop;
@@ -601,6 +601,7 @@ function renderOnboarding(){
 const obSteps=n=>`<div class="obsteps">${[1,2,3,4].slice(0,signedIn()?3:4).map(i=>`<i class="${i<=n?'on':''}"></i>`).join('')}</div>`;
 
 /* ============ account (email + password) ============ */
+const CONFIRM_LANDING=/type=signup/.test(location.hash); // opened from the confirmation email (read before supabase clears the URL)
 let AU={view:null,email:'',msg:'',kind:'',busy:false,recover:false};
 const signedIn=()=>!!(SYNC.user&&!SYNC.user.is_anonymous);
 function needsAccount(){
@@ -612,6 +613,25 @@ function needsAccount(){
 function renderAuth(view){
   AU.view=view;
   $('#tabbar').style.display='none';
+  if(view==='checkemail'||view==='confirmed'){
+    const check=view==='checkemail';
+    $('#screen').innerHTML=`<div class="ob">
+    <div class="logo"><i>f</i>Finfriend</div>
+    <div class="obart" style="--splash:${check?'#cfe8ff':'#d4f7ec'}">${mascot('happy',check?['#ffd0e4','#ff7eb3']:['#fff3a3','#ffc83d'],110)}</div>
+    ${check?`<h1>Check your inbox \u{1F4EC}</h1>
+    <div class="lead">We sent a confirmation email to <b style="color:var(--ink)">${esc(AU.email)}</b>. Open it and tap the link to activate your account, then come back here and log in.</div>
+    <div class="soft-alert info" style="margin-top:0">Not there? Look in your spam or promotions folder. It can take a minute or two.</div>
+    <div class="aumsg ${AU.kind}" id="auMsg">${esc(AU.msg)}</div>
+    <div style="height:10px"></div>
+    <button class="btn" data-act="auconfirmed">I’ve confirmed, log in</button>
+    <button class="btn ghost" style="margin-top:10px" data-act="auresend" ${AU.busy?'disabled':''}>${AU.busy?'Sending…':'Resend email'}</button>
+    <button class="link" data-act="auchange">Use a different email</button>`
+    :`<h1>Your email is confirmed \u{1F389}</h1>
+    <div class="lead">Your Finfriend account is active. Go back to the Finfriend app and log in with your email and password.</div>
+    <button class="btn" data-act="aulogin">Log in here instead</button>`}
+    </div>`;
+    return;
+  }
   const T={
     signup:['Save your progress','Create your account so your money plan stays safe and follows you on any device.','Create account','new-password'],
     login:['Welcome back','Log in with your email and password.','Log in','current-password'],
@@ -654,7 +674,7 @@ async function auSubmit(){
       const {data,error}=await SYNC.sb.auth.signUp({email:em,password:pw,options:{emailRedirectTo:redirect}});
       if(error)throw error;
       if(data.session){await signedInAs(data.user,false);toast('Account created. Welcome!',null)}
-      else{AU.busy=false;AU.view='login';render();auSay('Almost there: open the email we just sent you and tap the link to confirm. Then log in here.','ok')}
+      else{setMeta({pending:em});AU.busy=false;AU.msg='';AU.view='checkemail';render()}
     }else if(view==='login'){
       const {data,error}=await SYNC.sb.auth.signInWithPassword({email:em,password:pw});
       if(error)throw error;
@@ -669,14 +689,28 @@ async function auSubmit(){
       AU.recover=false;AU.busy=false;AU.view=null;render();toast('Password updated.',null);
     }
   }catch(e){
-    AU.busy=false;render();
+    AU.busy=false;
     const m=(e&&e.message)||'';
+    if(view==='login'&&/not confirmed/i.test(m)){setMeta({pending:em});AU.view='checkemail';AU.msg='Your email is not confirmed yet. Tap the link in the email we sent you.';AU.kind='err';render();return}
+    render();
     auSay(/rate limit/i.test(m)?'Too many emails were sent in the last hour. Wait a little and try again.':/invalid login/i.test(m)?'Wrong email or password.':/not confirmed/i.test(m)?'Confirm your email first: tap the link we sent you, then log in.':/already registered|already exists/i.test(m)?'This email already has an account. Log in instead.':m||'Something went wrong. Try again.','err');
+  }
+}
+async function auResend(){
+  if(!SYNC.sb||!navigator.onLine)return auSay('You are offline. Connect to the internet and try again.','err');
+  AU.busy=true;render();
+  try{
+    const {error}=await SYNC.sb.auth.resend({type:'signup',email:AU.email,options:{emailRedirectTo:location.origin+location.pathname}});
+    if(error)throw error;
+    AU.busy=false;AU.msg='Sent again. Check your inbox.';AU.kind='ok';render();
+  }catch(e){
+    const m=(e&&e.message)||'';
+    AU.busy=false;AU.msg=/rate limit|seconds/i.test(m)?'An email was sent very recently. Wait a few minutes before asking again.':m||'Could not resend. Try again.';AU.kind='err';render();
   }
 }
 async function signedInAs(user,isLogin){
   SYNC.user=user;SYNC.checked=true;
-  setMeta({email:user.email});
+  setMeta({email:user.email,pending:null});
   AU={view:null,email:'',msg:'',kind:'',busy:false,recover:false};
   if(isLogin)await pull(true);else push(); // log in: your saved data wins; new account: save what is on this device
   render();
@@ -839,6 +873,9 @@ document.addEventListener('click',e=>{
     case 'auforgot':auGo('forgot');break;
     case 'auback':auGo(null);break;
     case 'ausubmit':if(!AU.busy)auSubmit();break;
+    case 'auresend':if(!AU.busy)auResend();break;
+    case 'auconfirmed':AU.msg='';auGo('login');break;
+    case 'auchange':setMeta({pending:null});AU.email='';auGo('signup');break;
     case 'signout':signOut();break;
     case 'leavedemo':localStorage.removeItem(KEY);setMeta({updated:0,dirty:false});S=null;OB=null;TAB='home';closeSheet();auGo(null);break;
     case 'demo':closeSheet();S=demo();OB=null;TAB='home';stamp();persist();render();toast('Sample data loaded.',null);break;
@@ -977,6 +1014,7 @@ function initSync(){
     if(!navigator.onLine&&!SYNC.user)return; // offline: keep trusting the last sign-in
     SYNC.checked=true;
     setMeta({email:signedIn()?SYNC.user.email:null});
+    if(signedIn()){setMeta({pending:null});if(AU.view==='checkemail')AU.view=null;if(CONFIRM_LANDING&&S)toast('Email confirmed. Your progress is saved.',null)}
     if(!AU.busy)render();
     pull();
   }).catch(()=>{});
@@ -986,6 +1024,8 @@ function initSync(){
 
 /* ============ boot ============ */
 if(S){stamp();persist()}
+if(CONFIRM_LANDING&&!S)AU.view='confirmed';
+else if(meta().pending){AU.view='checkemail';AU.email=meta().pending}
 render();
 if(S&&location.hash==='#add'){KP={amt:'',cat:suggestCat(),note:''};openSheet('add')}
 window.addEventListener('load',()=>{
