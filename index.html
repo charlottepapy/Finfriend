@@ -907,7 +907,15 @@ function initSync(){
 if(S){stamp();persist()}
 render();
 if(S&&location.hash==='#add'){KP={amt:'',cat:suggestCat(),note:''};openSheet('add')}
-window.addEventListener('load',()=>{initSync();if('serviceWorker' in navigator&&location.protocol!=='file:')navigator.serviceWorker.register('sw.js').catch(()=>{})});
+window.addEventListener('load',()=>{
+  initSync();
+  if(!('serviceWorker' in navigator)||location.protocol==='file:')return;
+  const hadSW=!!navigator.serviceWorker.controller;let reloaded=false;
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{if(hadSW&&!reloaded&&!SHEET){reloaded=true;location.reload()}}); // a new version took over
+  navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(reg=>{
+    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')reg.update().catch(()=>{})});
+  }).catch(()=>{});
+});
 </script>
 </body>
 </html>
