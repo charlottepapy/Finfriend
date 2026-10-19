@@ -99,6 +99,13 @@ h1{font-size:26px;letter-spacing:-.02em;font-weight:700}
 .catbar .b{flex:1;height:10px;background:var(--line);border-radius:9px;overflow:hidden}
 .catbar .b i{display:block;height:100%;background:var(--c);border-radius:9px}
 .catbar .v{width:56px;text-align:right;font-weight:600}
+.pie{display:flex;align-items:center;gap:16px;margin-top:16px}
+.pie svg{flex:none}
+.legend{flex:1;min-width:0}
+.legend div{display:flex;align-items:center;gap:8px;font-size:13px;padding:4px 0}
+.legend i{width:9px;height:9px;border-radius:50%;background:var(--c);flex:none}
+.legend span{flex:1;font-weight:600}
+.legend em{font-style:normal;color:var(--mute);width:34px;text-align:right}
 .locked{display:flex;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line);opacity:.8}
 .locked:last-child{border:0}
 .locked svg{width:18px;height:18px;color:var(--violet);flex:none}
@@ -224,7 +231,7 @@ const persist=()=>{try{const j=JSON.stringify(S);if(localStorage.getItem(KEY)===
 
 function fresh(balance,nextIncome){
   const t=TODAY();
-  return {balance,nextIncome,bills:[],goal:null,expenses:[],days:{},checkins:[t],dayStart:{date:t,balance},showAmount:false,setupDismissed:false};
+  return {balance,nextIncome,startDate:t,bills:[],goal:null,expenses:[],days:{},checkins:[t],dayStart:{date:t,balance},showAmount:false,setupDismissed:false};
 }
 function demo(){
   const t=TODAY();
@@ -243,6 +250,7 @@ function demo(){
   s.dayStart={date:t,balance:481+7.3};
   for(let i=1;i<=6;i++){s.days[addDays(t,-i)]={base:i===2?22:27};s.checkins.push(addDays(t,-i));}
   s.setupDismissed=true;
+  s.startDate=addDays(t,-6);
   return s;
 }
 
@@ -288,8 +296,12 @@ function weekRecap(){
   const top=Object.entries(byCat).sort((a,b)=>b[1]-a[1])[0];
   return {days,within:days.filter(x=>x.spent<=x.base).length,total:exp.reduce((a,e)=>a+e.amount,0),top,byCat};
 }
+function firstDay(){ // older saves have no startDate: use the earliest day we know about
+  return [...S.checkins,...S.expenses.map(e=>e.date)].sort()[0]||TODAY();
+}
 function stamp(){ // keep today's base on record
   const t=TODAY();
+  if(!S.startDate)S.startDate=firstDay();
   if(!S.dayStart||S.dayStart.date!==t){S.dayStart={date:t,balance:S.balance};}
   S.days[t]={base:calc().base};
   if(!S.checkins.includes(t))S.checkins.push(t);
@@ -404,12 +416,37 @@ function activity(){
   const by={};wk.forEach(e=>by[e.cat]=(by[e.cat]||0)+e.amount);
   const max=Math.max(1,...Object.values(by));
   const groups={};S.expenses.slice().sort((a,b)=>b.date.localeCompare(a.date)||b.h-a.h).forEach(e=>(groups[e.date]=groups[e.date]||[]).push(e));
-  return `<div class="head"><div><div class="hello">Last 7 days</div><h1>Activity</h1></div></div>
-  <div class="card" style="margin-top:0"><div class="mute">Spent this week</div><div class="num" style="font-size:34px;font-weight:700;letter-spacing:-.03em;margin:2px 0 8px">${usd(tot)}</div>
+  return `<div class="head"><div><div class="hello">Your money</div><h1>Activity</h1></div></div>
+  ${overview()}
+  <div class="card"><div class="mute">Spent in the last 7 days</div><div class="num" style="font-size:34px;font-weight:700;letter-spacing:-.03em;margin:2px 0 8px">${usd(tot)}</div>
     ${Object.entries(by).sort((a,b)=>b[1]-a[1]).map(([n,v])=>`<div class="catbar" style="--c:${catColor(n)}"><span class="n">${n}</span><span class="b"><i style="width:${v/max*100}%"></i></span><span class="v">${usd(v)}</span></div>`).join('')||'<div class="mute">Nothing logged yet.</div>'}
   </div>
   ${Object.keys(groups).slice(0,12).map(d=>`<div class="day">${dayLabel(d)}</div><div class="card" style="margin-top:6px;padding:2px 14px">
     ${groups[d].map(e=>`<div class="item"><div class="dotc" style="--c:${catColor(e.cat)}"></div><div class="t"><b>${esc(e.name)}</b><span>${e.cat}</span></div><span class="amt num">${usd(e.amount)}</span><button class="x" data-act="delexp" data-v="${e.id}" aria-label="Remove">×</button></div>`).join('')}</div>`).join('')}`;
+}
+
+function overview(){
+  const by={};S.expenses.forEach(e=>by[e.cat]=(by[e.cat]||0)+e.amount);
+  const parts=Object.entries(by).filter(p=>p[1]>0).sort((a,b)=>b[1]-a[1]);
+  const tot=parts.reduce((a,p)=>a+p[1],0);
+  const since=dt(S.startDate||firstDay()).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  return `<div class="card" style="margin-top:0">
+    <div class="stats" style="grid-template-columns:1fr 1fr">
+      <div class="stat"><span>Balance now</span><b class="num" style="font-size:28px">${usd(S.balance)}</b></div>
+      <div class="stat"><span>Spent since ${since}</span><b class="num" style="font-size:28px">${usd(tot)}</b></div>
+    </div>
+    ${parts.length?`<div class="pie">${pieSVG(parts,tot)}<div class="legend">${parts.map(([n,v])=>`<div style="--c:${catColor(n)}"><i></i><span>${n}</span><b class="num">${usd(v)}</b><em class="num">${Math.round(v/tot*100)}%</em></div>`).join('')}</div></div>`
+    :'<div class="mute" style="margin-top:12px">Log an expense and your breakdown appears here.</div>'}
+  </div>`;
+}
+function pieSVG(parts,tot){
+  const R=56,C=60;
+  if(parts.length===1)return `<svg width="120" height="120" viewBox="0 0 120 120"><circle cx="${C}" cy="${C}" r="${R}" fill="${catColor(parts[0][0])}"/></svg>`;
+  let a=-Math.PI/2;
+  const pt=t=>(C+R*Math.cos(t)).toFixed(2)+' '+(C+R*Math.sin(t)).toFixed(2);
+  return `<svg width="120" height="120" viewBox="0 0 120 120" role="img" aria-label="Spending by category">${parts.map(([n,v])=>{
+    const s=a;a+=v/tot*2*Math.PI;
+    return `<path d="M${C} ${C}L${pt(s)}A${R} ${R} 0 ${a-s>Math.PI?1:0} 1 ${pt(a)}Z" fill="${catColor(n)}" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>`}).join('')}</svg>`;
 }
 
 function bills(){
