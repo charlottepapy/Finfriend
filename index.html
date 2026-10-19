@@ -671,7 +671,7 @@ async function auSubmit(){
   }catch(e){
     AU.busy=false;render();
     const m=(e&&e.message)||'';
-    auSay(/invalid login/i.test(m)?'Wrong email or password.':/not confirmed/i.test(m)?'Confirm your email first: tap the link we sent you, then log in.':/already registered|already exists/i.test(m)?'This email already has an account. Log in instead.':m||'Something went wrong. Try again.','err');
+    auSay(/rate limit/i.test(m)?'Too many emails were sent in the last hour. Wait a little and try again.':/invalid login/i.test(m)?'Wrong email or password.':/not confirmed/i.test(m)?'Confirm your email first: tap the link we sent you, then log in.':/already registered|already exists/i.test(m)?'This email already has an account. Log in instead.':m||'Something went wrong. Try again.','err');
   }
 }
 async function signedInAs(user,isLogin){
