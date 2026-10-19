@@ -205,6 +205,9 @@ h1{font-family:var(--disp);font-size:28px;letter-spacing:-.02em;font-weight:700}
 .obsteps i{height:5px;flex:1;border-radius:9px;background:#e1daf7}
 .obsteps i.on{background:linear-gradient(90deg,#ff7eb3,var(--brand))}
 .obback{font-size:13px;font-weight:600;color:var(--mute);margin-bottom:6px}
+.aumsg{font-size:13px;margin-top:12px;min-height:18px;color:var(--mute);line-height:1.4}
+.aumsg.err{color:#d6336c}
+.aumsg.ok{color:#0c8a6e}
 .link{display:block;text-align:center;margin-top:16px;font-size:13px;font-weight:600;color:var(--brand);width:100%}
 
 /* phone / installed app */
@@ -309,6 +312,7 @@ function demo(){
   for(let i=1;i<=6;i++){s.days[addDays(t,-i)]={base:i===2?22:27};s.checkins.push(addDays(t,-i));}
   s.setupDismissed=true;
   s.startDate=addDays(t,-6);
+  s.demo=true; // sample data: no account needed, never synced
   return s;
 }
 
@@ -387,7 +391,9 @@ function logExpense(name,cat,amount){
 
 /* ============ render ============ */
 function render(){
-  if(!S){renderOnboarding();return}
+  if(AU.recover){renderAuth('newpass');return}
+  if(!S){if(AU.view==='login'||AU.view==='forgot')renderAuth(AU.view);else renderOnboarding();return}
+  if(needsAccount()){renderAuth(AU.view||'signup');return}
   const s=$('#screen');
   const y=s.scrollTop;
   s.innerHTML=({home:home,act:activity,bill:bills,goal:goals})[TAB]();
@@ -565,7 +571,8 @@ function renderOnboarding(){
     <div class="moneyin"><span>$</span><input id="obBal" inputmode="decimal" placeholder="0" value="${esc(OB.balance)}" autocomplete="off"></div>
     <div style="height:22px"></div>
     <button class="btn" id="obGo" data-act="obnext" ${isNaN(obBalance())?'disabled':''}>Continue</button>
-    <button class="link" data-act="demo">Explore with sample data</button>`;
+    <button class="link" data-act="aulogin">I already have an account · Log in</button>
+    <button class="link" data-act="demo" style="color:var(--mute);margin-top:10px">Explore with sample data</button>`;
   else if(OB.step===2)body=`
     <h1>When does your money come in?</h1>
     <div class="lead">The day of the month you usually get paid or receive money.</div>
@@ -581,16 +588,107 @@ function renderOnboarding(){
     <label class="field"><span>Goal</span><input id="obGName" placeholder="e.g. Spring trip" maxlength="30" value="${esc(OB.gName)}"></label>
     <label class="field"><span>How much do you want to save?</span><input id="obGTarget" inputmode="decimal" placeholder="$0" value="${esc(OB.gTarget)}"></label>
     <div style="height:22px"></div>
-    <button class="btn" data-act="obgo">Show me my day</button>
+    <button class="btn" data-act="obgo">${signedIn()?'Show me my day':'Continue'}</button>
     <button class="link" data-act="obskip">Skip for now</button>`;
   $('#screen').innerHTML=`<div class="ob">
     <div class="logo"><i>f</i>Finfriend</div>
-    <div class="obsteps">${[1,2,3].map(i=>`<i class="${i<=OB.step?'on':''}"></i>`).join('')}</div>
+    ${obSteps(OB.step)}
     ${OB.step>1?back:''}
     ${[ ['#e3d9ff','happy',['#ffd0e4','#ff7eb3']], ['#cfe8ff','calm',['#fff3a3','#ffc83d']], ['#ffd9e6','happy',['#b8f5df','#27c99a']] ].slice(OB.step-1,OB.step).map(([sp,mood,c])=>`<div class="obart" style="--splash:${sp}">${mascot(mood,c,120)}</div>`).join('')}
     ${body}
   </div>`;
 }
+const obSteps=n=>`<div class="obsteps">${[1,2,3,4].slice(0,signedIn()?3:4).map(i=>`<i class="${i<=n?'on':''}"></i>`).join('')}</div>`;
+
+/* ============ account (email + password) ============ */
+let AU={view:null,email:'',msg:'',kind:'',busy:false,recover:false};
+const signedIn=()=>!!(SYNC.user&&!SYNC.user.is_anonymous);
+function needsAccount(){
+  if(S&&S.demo)return false;
+  if(signedIn())return false;
+  if(!SYNC.checked)return !meta().email; // not confirmed yet: trust the last known sign-in, so offline still works
+  return true;
+}
+function renderAuth(view){
+  AU.view=view;
+  $('#tabbar').style.display='none';
+  const T={
+    signup:['Save your progress','Create your account so your money plan stays safe and follows you on any device.','Create account','new-password'],
+    login:['Welcome back','Log in with your email and password.','Log in','current-password'],
+    forgot:['Reset your password','We will email you a link to choose a new password.','Send reset link',''],
+    newpass:['Choose a new password','Pick something you will remember. At least 8 characters.','Save new password','new-password']}[view];
+  const links={
+    signup:'<button class="link" data-act="aulogin">I already have an account · Log in</button>',
+    login:'<button class="link" data-act="auforgot">Forgot password?</button>'+(S?'<button class="link" data-act="ausignup" style="color:var(--mute)">New here? Create an account</button>':''),
+    forgot:'<button class="link" data-act="aulogin">Back to log in</button>',
+    newpass:''}[view];
+  $('#screen').innerHTML=`<div class="ob">
+    <div class="logo"><i>f</i>Finfriend</div>
+    ${view==='signup'&&OB===null&&S&&!S.demo?obSteps(4):''}
+    ${view==='login'&&!S?'<button class="obback" data-act="auback">‹ Back</button>':''}
+    <div class="obart" style="--splash:#e3d9ff">${mascot(view==='forgot'||view==='newpass'?'calm':'happy',['#fff3a3','#ffc83d'],110)}</div>
+    <h1>${T[0]}</h1>
+    <div class="lead">${T[1]}</div>
+    ${view!=='newpass'?`<label class="field"><span>Email</span><input id="auEmail" type="email" inputmode="email" autocomplete="email" autocapitalize="off" placeholder="you@email.com" value="${esc(AU.email)}"></label>`:''}
+    ${view!=='forgot'?`<label class="field"><span>Password</span><input id="auPass" type="password" autocomplete="${T[3]}" placeholder="${view==='login'?'Your password':'At least 8 characters'}"></label>`:''}
+    <div class="aumsg ${AU.kind}" id="auMsg">${esc(AU.msg)}</div>
+    <div style="height:10px"></div>
+    <button class="btn" data-act="ausubmit" ${AU.busy?'disabled':''}>${AU.busy?'One moment…':T[2]}</button>
+    ${links}
+  </div>`;
+}
+function auSay(msg,kind){AU.msg=msg;AU.kind=kind||'';const el=$('#auMsg');if(el){el.textContent=msg;el.className='aumsg '+AU.kind}}
+function auGo(view){AU.view=view;AU.msg='';AU.kind='';render()}
+async function auSubmit(){
+  const view=AU.view,em=(($('#auEmail')||{}).value||AU.email).trim(),pw=($('#auPass')||{}).value||'';
+  AU.email=em;
+  if(view!=='newpass'&&!/^\S+@\S+\.\S+$/.test(em))return auSay('Enter a valid email.','err');
+  if((view==='signup'||view==='newpass')&&pw.length<8)return auSay('Your password needs at least 8 characters.','err');
+  if(view==='login'&&!pw)return auSay('Enter your password.','err');
+  if(!SYNC.sb)return auSay('Cannot reach Finfriend right now. Check your connection and reload.','err');
+  if(!navigator.onLine)return auSay('You are offline. Connect to the internet and try again.','err');
+  const redirect=location.origin+location.pathname;
+  AU.busy=true;AU.msg='';render();
+  try{
+    if(view==='signup'){
+      const {data,error}=await SYNC.sb.auth.signUp({email:em,password:pw,options:{emailRedirectTo:redirect}});
+      if(error)throw error;
+      if(data.session){await signedInAs(data.user,false);toast('Account created. Welcome!',null)}
+      else{AU.busy=false;AU.view='login';render();auSay('Almost there: open the email we just sent you and tap the link to confirm. Then log in here.','ok')}
+    }else if(view==='login'){
+      const {data,error}=await SYNC.sb.auth.signInWithPassword({email:em,password:pw});
+      if(error)throw error;
+      await signedInAs(data.user,true);
+    }else if(view==='forgot'){
+      const {error}=await SYNC.sb.auth.resetPasswordForEmail(em,{redirectTo:redirect});
+      if(error)throw error;
+      AU.busy=false;render();auSay('If this email has an account, a reset link is on its way.','ok');
+    }else{
+      const {error}=await SYNC.sb.auth.updateUser({password:pw});
+      if(error)throw error;
+      AU.recover=false;AU.busy=false;AU.view=null;render();toast('Password updated.',null);
+    }
+  }catch(e){
+    AU.busy=false;render();
+    const m=(e&&e.message)||'';
+    auSay(/invalid login/i.test(m)?'Wrong email or password.':/not confirmed/i.test(m)?'Confirm your email first: tap the link we sent you, then log in.':/already registered|already exists/i.test(m)?'This email already has an account. Log in instead.':m||'Something went wrong. Try again.','err');
+  }
+}
+async function signedInAs(user,isLogin){
+  SYNC.user=user;SYNC.checked=true;
+  setMeta({email:user.email});
+  AU={view:null,email:'',msg:'',kind:'',busy:false,recover:false};
+  if(isLogin)await pull(true);else push(); // log in: your saved data wins; new account: save what is on this device
+  render();
+}
+async function signOut(){
+  if(meta().dirty)await push();
+  try{await SYNC.sb.auth.signOut()}catch(e){}
+  SYNC.user=null;
+  localStorage.removeItem(KEY);setMeta({updated:0,dirty:false,email:null,uid:null});
+  S=null;OB=null;TAB='home';closeSheet();auGo('login');
+}
+
 function finishOnboarding(withGoal){
   const b=obBalance();
   if(isNaN(b)){OB.step=1;renderOnboarding();return}
@@ -647,7 +745,6 @@ function paintSheet(){
     el.innerHTML=`<div class="grab"></div><div class="stitle">Settings</div>
     <button class="menu" data-act="money"><span>Update balance and income date</span><span>›</span></button>
     <div class="toggle"><div><b style="font-size:15px">Always show the amount</b><div class="mute">Off keeps it private until you reveal it</div></div><button class="sw ${S.showAmount?'on':''}" data-act="toggleamt" aria-label="Toggle"></button></div>
-    <button class="menu" data-act="demo"><span>Load sample data</span><span>›</span></button>
     <button class="menu" data-act="reset" style="color:#c2475a;border:0"><span>Erase everything and start over</span><span>›</span></button>
     <div id="syncLine" class="sync"><i></i><span></span></div>
     ${accountHTML()}
@@ -737,8 +834,13 @@ document.addEventListener('click',e=>{
       },'Balance updated.');break}
     case 'export':{const b=new Blob([JSON.stringify({app:'finfriend',version:1,exported:new Date().toISOString(),state:S},null,1)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='finfriend-backup-'+TODAY()+'.json';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500);break}
     case 'import':{const f=$('#impFile');if(f)f.click();break}
-    case 'accsave':accountAction('upgrade');break;
-    case 'accsignin':accountAction('signin');break;
+    case 'aulogin':auGo('login');break;
+    case 'ausignup':auGo('signup');break;
+    case 'auforgot':auGo('forgot');break;
+    case 'auback':auGo(null);break;
+    case 'ausubmit':if(!AU.busy)auSubmit();break;
+    case 'signout':signOut();break;
+    case 'leavedemo':localStorage.removeItem(KEY);setMeta({updated:0,dirty:false});S=null;OB=null;TAB='home';closeSheet();auGo(null);break;
     case 'demo':closeSheet();S=demo();OB=null;TAB='home';stamp();persist();render();toast('Sample data loaded.',null);break;
     case 'reset':
       if(el.dataset.sure){localStorage.removeItem(KEY);setMeta({updated:0,dirty:false});wipeRemote();S=null;OB=null;TAB='home';closeSheet();render()}
@@ -763,6 +865,7 @@ document.addEventListener('input',e=>{
   }
   else if(id==='obGName'){OB.gName=e.target.value;document.querySelectorAll('.ob .chip').forEach(c=>c.classList.toggle('on',c.dataset.v===e.target.value))}
   else if(id==='obGTarget'){OB.gTarget=e.target.value}
+  else if(id==='auEmail'){AU.email=e.target.value}
   else if(id==='kpNote'){KP.note=e.target.value}
   else if(id==='affIn'){
     const p=parseFloat(e.target.value.replace(/[^0-9.,]/g,'').replace(',','.'));
@@ -778,6 +881,7 @@ function updateKp(){
 document.addEventListener('keydown',e=>{
   const typing=['INPUT','TEXTAREA'].includes(document.activeElement.tagName);
   if(e.key==='Escape'&&SHEET){closeSheet();return}
+  if(e.key==='Enter'&&['auEmail','auPass'].includes(document.activeElement.id)){e.preventDefault();if(!AU.busy)auSubmit();return}
   if(SHEET==='add'&&!typing){
     if(/^[0-9.]$/.test(e.key))$(`.pad button[data-v="${e.key}"]`).click();
     else if(e.key==='Backspace')$('.pad button[data-v="\u232b"]').click();
@@ -801,7 +905,7 @@ document.addEventListener('change',e=>{
 const META='finfriend.meta';
 function meta(){try{return JSON.parse(localStorage.getItem(META)||'{}')}catch(e){return {}}}
 function setMeta(o){try{localStorage.setItem(META,JSON.stringify(Object.assign(meta(),o)))}catch(e){}}
-const SYNC={sb:null,user:null,state:'off',err:'',busy:false,timer:null};
+const SYNC={sb:null,user:null,checked:false,state:'off',err:'',busy:false,timer:null};
 function setStatus(s,err){SYNC.state=s;SYNC.err=err||'';paintSync()}
 function paintSync(){
   const el=$('#syncLine');if(!el)return;
@@ -809,54 +913,24 @@ function paintSync(){
   el.className='sync '+m[0];el.lastElementChild.textContent=m[1]+(SYNC.state==='err'&&SYNC.err?' ['+SYNC.err+']':'');
 }
 function accountHTML(){
+  if(S&&S.demo)return `<div class="accbox"><b style="font-size:14px">You are exploring sample data</b>
+    <div class="mute" style="margin-top:4px">Ready to use your own numbers? Answer three questions and create your account.</div>
+    <button class="btn" data-act="leavedemo">Start for real</button></div>`;
   const u=SYNC.user;
-  if(!SYNC.sb)return `<div class="accbox"><b style="font-size:14px">Account</b><div class="mute" style="margin-top:4px">Sync is unavailable right now.</div></div>`;
-  if(u&&!u.is_anonymous)return `<div class="accbox"><b style="font-size:14px">Signed in</b><div class="mute" style="margin-top:4px">${esc(u.email||'')}</div></div>`;
-  return `<div class="accbox"><b style="font-size:14px">Keep your progress safe</b>
-    <div class="mute" style="margin-top:4px">You are using a guest account. Add your email so you never lose your data, or to open it on another device.</div>
-    <label class="field"><span>Email</span><input id="accEmail" type="email" inputmode="email" autocomplete="email" placeholder="you@berkeley.edu"></label>
-    <button class="btn" data-act="accsave">Save my progress</button>
-    <button class="btn ghost" data-act="accsignin">I already have an account</button>
-    <div id="accMsg"></div></div>`;
-}
-async function accountAction(kind){
-  const msg=$('#accMsg'),em=($('#accEmail')||{}).value;
-  const say=s=>{if(msg)msg.textContent=s};
-  if(!em||!/^\S+@\S+\.\S+$/.test(em.trim()))return say('Enter a valid email first.');
-  if(!SYNC.sb)return say('Sync is unavailable right now.');
-  if(!navigator.onLine)return say('You are offline. Try again with a connection.');
-  const redirect=location.origin+location.pathname;
-  say('Sending\u2026');
-  try{
-    if(kind==='upgrade'){
-      await ensureAuth();
-      const {error}=await SYNC.sb.auth.updateUser({email:em.trim()},{emailRedirectTo:redirect});
-      if(error)throw error;say('Check your inbox and tap the link to confirm.');
-    }else{
-      const {error}=await SYNC.sb.auth.signInWithOtp({email:em.trim(),options:{emailRedirectTo:redirect,shouldCreateUser:false}});
-      if(error)throw error;say('Check your inbox and tap the sign-in link. It will restore your data here.');
-    }
-  }catch(e){say(e&&e.message?e.message:'Something went wrong.')}
-}
-async function ensureAuth(){
-  if(SYNC.user)return SYNC.user;
-  const {data:{session}}=await SYNC.sb.auth.getSession();
-  if(session){SYNC.user=session.user;return SYNC.user}
-  const {data,error}=await SYNC.sb.auth.signInAnonymously();
-  if(error)throw error;
-  SYNC.user=data.user;setMeta({uid:data.user.id});return SYNC.user;
+  return `<div class="accbox"><b style="font-size:14px">Account</b><div class="mute" style="margin-top:4px">${signedIn()?'Signed in as '+esc(u.email||''):esc(meta().email||'Not signed in')}</div>
+    <button class="btn ghost" data-act="signout">Sign out</button></div>`;
 }
 function queuePush(){
   if(!SYNC.sb)return;
   clearTimeout(SYNC.timer);SYNC.timer=setTimeout(push,1500);
 }
 async function push(){
-  if(!SYNC.sb||!S)return;
+  if(!SYNC.sb||!S||S.demo||!signedIn())return;
   if(!navigator.onLine)return setStatus('offline');
   if(SYNC.busy){queuePush();return}
   SYNC.busy=true;setStatus('busy');
   try{
-    const u=await ensureAuth(),started=meta().updated||Date.now();
+    const u=SYNC.user,started=meta().updated||Date.now();
     const {error}=await SYNC.sb.from('app_state').upsert({user_id:u.id,state:S,client_updated:started,updated_at:new Date().toISOString()});
     if(error)throw error;
     if((meta().updated||0)===started)setMeta({dirty:false});
@@ -868,7 +942,7 @@ async function pull(force){
   if(!SYNC.sb||!navigator.onLine)return;
   try{
     const {data:{session}}=await SYNC.sb.auth.getSession();
-    if(!session){if(S)push();return}
+    if(!session||session.user.is_anonymous){SYNC.user=null;setStatus('off');return}
     SYNC.user=session.user;
     if(meta().uid&&meta().uid!==session.user.id)force=true; // signed in as someone else: their data wins
     setMeta({uid:session.user.id});
@@ -894,11 +968,18 @@ function initSync(){
   if(!window.supabase||!c||!c.SUPABASE_URL){setStatus('err','sync library did not load, reload once while online');return}
   SYNC.sb=window.supabase.createClient(c.SUPABASE_URL,c.SUPABASE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
   SYNC.sb.auth.onAuthStateChange((ev,session)=>{
-    const uid=session&&session.user?session.user.id:null;
     SYNC.user=session?session.user:null;
+    if(ev==='PASSWORD_RECOVERY'){AU.recover=true;AU.msg='';setTimeout(render,0)}
     if(ev==='USER_UPDATED'&&SHEET==='settings')setTimeout(paintSheet,0);
   });
-  pull();
+  SYNC.sb.auth.getSession().then(({data:{session}})=>{
+    SYNC.user=session?session.user:null;
+    if(!navigator.onLine&&!SYNC.user)return; // offline: keep trusting the last sign-in
+    SYNC.checked=true;
+    setMeta({email:signedIn()?SYNC.user.email:null});
+    if(!AU.busy)render();
+    pull();
+  }).catch(()=>{});
   window.addEventListener('online',()=>pull());
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')pull()});
 }
