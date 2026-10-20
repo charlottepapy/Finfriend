@@ -205,6 +205,20 @@ h1{font-family:var(--disp);font-size:28px;letter-spacing:-.02em;font-weight:700}
 .obsteps i{height:5px;flex:1;border-radius:9px;background:#e1daf7}
 .obsteps i.on{background:linear-gradient(90deg,#ff7eb3,var(--brand))}
 .obback{font-size:13px;font-weight:600;color:var(--mute);margin-bottom:6px}
+.daterow{display:flex;gap:8px;justify-content:center;margin:0 0 12px;flex-wrap:wrap}
+.datechip{position:relative;overflow:hidden}
+.datechip input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}
+.cat.add{background:transparent;border:1.5px dashed #cdc3f5;color:var(--brand)}
+.item.tap{cursor:pointer}
+.catrow{width:100%;text-align:left}
+.cfprev{width:76px;height:76px;border-radius:24px;display:grid;place-items:center;font-size:38px;margin:10px auto 2px;background:color-mix(in srgb,var(--c) 30%,#fff)}
+.sublab{font-size:12px;font-weight:600;color:var(--mute);margin-top:14px}
+.emos{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin-top:8px}
+.emos button{aspect-ratio:1;border-radius:12px;font-size:20px;background:var(--card);box-shadow:var(--shadow)}
+.emos button.on{outline:2.5px solid var(--brand)}
+.swatches{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
+.swatches button{width:34px;height:34px;border-radius:50%;background:var(--c)}
+.swatches button.on{box-shadow:0 0 0 3px var(--bg),0 0 0 5px var(--ink)}
 .pw{position:relative}
 .pw input{padding-right:50px!important}
 .eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:40px;height:40px;border-radius:12px;display:grid;place-items:center;color:var(--mute)}
@@ -264,8 +278,11 @@ function nextPayDate(day){ // next time this day of the month comes round, after
   for(let k=0;;k++){const y=t.getFullYear(),m=t.getMonth()+k;const d=ymd(new Date(y,m,Math.min(day,new Date(y,m+1,0).getDate()),12));if(d>TODAY())return d}
 }
 const relDue=s=>{const n=diffDays(TODAY(),s);return n<0?'Overdue':n===0?'Due today':n===1?'Due tomorrow':'Due in '+n+' days'};
-const CATS=[{n:'Food',c:'#ff9f43',e:'\u{1F354}'},{n:'Transport',c:'#4dabff',e:'\u{1F68C}'},{n:'Fun',c:'#b06bff',e:'\u{1F389}'},{n:'Study',c:'#1fc8a0',e:'\u{1F4DA}'},{n:'Shopping',c:'#ff6fa3',e:'\u{1F6CD}️'},{n:'Other',c:'#ffd23f',e:'✨'}];
-const catOf=n=>CATS.find(c=>c.n===n)||CATS[5];
+const DEFAULT_CATS=[{n:'Food',c:'#ff9f43',e:'\u{1F354}'},{n:'Groceries',c:'#4cc76a',e:'\u{1F6D2}'},{n:'Transport',c:'#4dabff',e:'\u{1F68C}'},{n:'Fun',c:'#b06bff',e:'\u{1F389}'},{n:'Study',c:'#1fc8a0',e:'\u{1F4DA}'},{n:'Shopping',c:'#ff6fa3',e:'\u{1F6CD}️'},{n:'Health',c:'#ef476f',e:'\u{1F48A}'},{n:'Other',c:'#ffd23f',e:'✨'}];
+const CAT_COLORS=['#ff9f43','#ffd23f','#4cc76a','#1fc8a0','#4dabff','#6c4cf5','#b06bff','#ff6fa3','#ef476f','#8d6e63'];
+const CAT_EMOJIS=['\u{1F354}','\u{1F6D2}','\u{1F68C}','\u{1F389}','\u{1F4DA}','\u{1F6CD}️','\u{1F48A}','✨','\u{1F3E0}','\u{1F4A1}','\u{1F4F1}','\u{1F381}','✈️','☕','\u{1F436}','\u{1F476}','\u{1F4AA}','\u{1F3AE}','\u{1F3AC}','\u{1F484}','\u{1F9FE}','\u{1F697}','⛽','\u{1F377}'];
+const cats=()=>(S&&S.cats)||DEFAULT_CATS; // each user's own list, saved with their data
+const catOf=n=>cats().find(c=>c.n===n)||cats().find(c=>c.n==='Other')||DEFAULT_CATS[7];
 const catColor=n=>catOf(n).c;
 const catEmoji=n=>catOf(n).e;
 function mascot(mood,c,size){ // little blob friend; mood: happy | calm | meh | worried
@@ -292,7 +309,7 @@ const IC={
 };
 
 /* ============ state ============ */
-let S=null,TAB='home',SHEET=null,KP={amt:'',cat:'Food',note:''},OB=null,revealUntil=0,revealTimer=null,toastTimer=null;
+let S=null,TAB='home',SHEET=null,KP={amt:'',cat:'Food',note:'',date:''},CF=null,OB=null,revealUntil=0,revealTimer=null,toastTimer=null;
 try{S=JSON.parse(localStorage.getItem(KEY)||'null')}catch(e){S=null}
 const persist=()=>{try{const j=JSON.stringify(S);if(localStorage.getItem(KEY)===j)return;localStorage.setItem(KEY,j);setMeta({updated:Date.now(),dirty:true});queuePush()}catch(e){}};
 
@@ -371,6 +388,7 @@ function firstDay(){ // older saves have no startDate: use the earliest day we k
 function stamp(){ // keep today's base on record
   const t=TODAY();
   if(!S.startDate)S.startDate=firstDay();
+  if(!S.cats)S.cats=DEFAULT_CATS.map(c=>({...c}));
   if(!S.dayStart||S.dayStart.date!==t){S.dayStart={date:t,balance:S.balance};}
   S.days[t]={base:calc().base};
   if(!S.checkins.includes(t))S.checkins.push(t);
@@ -388,12 +406,18 @@ function toast(msg,snap){
   el._snap=snap;el.classList.add('on');
   clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('on'),4500);
 }
-function logExpense(name,cat,amount){
-  mutate(()=>{
-    S.expenses.push({id:uid(),name,cat,amount,date:TODAY(),h:new Date().getHours()});
-    S.balance-=amount;
-  },'Logged '+usd(amount)+' · '+esc(cat));
+function applyExp(e,sign){ // +1 adds an expense to the balance, -1 takes it back out
+  S.balance-=sign*e.amount;
+  if(e.date!==TODAY())S.dayStart.balance-=sign*e.amount; // past days are already closed: today's start shifts instead
 }
+function logExpense(name,cat,amount,date){
+  date=date||TODAY();
+  mutate(()=>{
+    const e={id:uid(),name,cat,amount,date,h:date===TODAY()?new Date().getHours():12};
+    S.expenses.push(e);applyExp(e,1);
+  },'Logged '+usd(amount)+' · '+esc(cat)+(date!==TODAY()?' · '+dayLabel(date):''));
+}
+const newKP=()=>{const s=suggestCat();return {amt:'',cat:cats().some(c=>c.n===s)?s:cats()[0].n,note:'',date:TODAY(),edit:null}};
 
 /* ============ render ============ */
 function render(){
@@ -495,7 +519,7 @@ function activity(){
     ${Object.entries(by).sort((a,b)=>b[1]-a[1]).map(([n,v])=>`<div class="catbar" style="--c:${catColor(n)}"><span class="n">${n}</span><span class="b"><i style="width:${v/max*100}%"></i></span><span class="v">${usd(v)}</span></div>`).join('')||'<div class="mute">Nothing logged yet.</div>'}
   </div>
   ${Object.keys(groups).slice(0,12).map(d=>`<div class="day">${dayLabel(d)}</div><div class="card" style="margin-top:6px;padding:2px 14px">
-    ${groups[d].map(e=>`<div class="item"><div class="dotc" style="--c:${catColor(e.cat)}">${catEmoji(e.cat)}</div><div class="t"><b>${esc(e.name)}</b><span>${e.cat}</span></div><span class="amt num">${usd(e.amount)}</span><button class="x" data-act="delexp" data-v="${e.id}" aria-label="Remove">×</button></div>`).join('')}</div>`).join('')}`;
+    ${groups[d].map(e=>`<div class="item tap" data-act="editexp" data-v="${e.id}"><div class="dotc" style="--c:${catColor(e.cat)}">${catEmoji(e.cat)}</div><div class="t"><b>${esc(e.name)}</b><span>${e.cat}</span></div><span class="amt num">${usd(e.amount)}</span><button class="x" data-act="delexp" data-v="${e.id}" aria-label="Remove">×</button></div>`).join('')}</div>`).join('')}`;
 }
 
 function overview(){
@@ -763,12 +787,37 @@ function closeSheet(){SHEET=null;$('#sheet').classList.remove('on');$('#ovl').cl
 function paintSheet(){
   const el=$('#sheet');
   if(SHEET==='add'){
+    const t=TODAY(),y=addDays(t,-1),other=KP.date!==t&&KP.date!==y;
     el.innerHTML=`<div class="grab"></div>
+    ${KP.edit?'<div class="stitle" style="text-align:center">Edit expense</div>':''}
     <div class="kpamt num" id="kpAmt">${KP.amt?'$'+KP.amt:'<span class="z">$0</span>'}</div>
-    <div class="cats">${CATS.map(c=>`<button class="cat ${KP.cat===c.n?'on':''}" data-act="kcat" data-v="${c.n}" style="--c:${c.c}">${c.e} ${c.n}</button>`).join('')}</div>
+    <div class="daterow">${[['Today',t],['Yesterday',y]].map(([l,d])=>`<button class="chip ${KP.date===d?'on':''}" data-act="kdate" data-v="${d}">${l}</button>`).join('')}
+      <label class="chip datechip ${other?'on':''}">\u{1F4C5} ${other?fmtDate(KP.date):'Other date'}<input type="date" id="kpDate" max="${t}" value="${KP.date}" aria-label="Purchase date"></label></div>
+    <div class="cats">${cats().map(c=>`<button class="cat ${KP.cat===c.n?'on':''}" data-act="kcat" data-v="${esc(c.n)}" style="--c:${c.c}">${c.e} ${esc(c.n)}</button>`).join('')}<button class="cat add" data-act="catnew" data-v="add">+ New</button></div>
     <input class="note" id="kpNote" placeholder="Note (optional)" value="${esc(KP.note)}" maxlength="40">
     <div class="pad">${['1','2','3','4','5','6','7','8','9','.','0','\u232b'].map(k=>`<button data-act="key" data-v="${k}">${k}</button>`).join('')}</div>
-    <button class="btn" id="kpLog" data-act="klog" ${parseFloat(KP.amt)>0?'':'disabled'}>Log expense</button>`;
+    <button class="btn" id="kpLog" data-act="klog" ${parseFloat(KP.amt)>0?'':'disabled'}>${KP.edit?'Save changes':'Log expense'}</button>
+    ${KP.edit?`<button class="link" data-act="delexp" data-v="${KP.edit}" style="color:#d6336c">Delete this expense</button>`:''}`;
+  }else if(SHEET==='cats'){
+    el.innerHTML=`<div class="grab"></div><div class="stitle">Categories</div><div class="mute">Tap a category to rename it or change its look.</div>
+    <div class="card" style="padding:2px 14px">${cats().map(c=>{const n=S.expenses.filter(x=>x.cat===c.n).length;
+      return `<button class="item catrow" data-act="catedit" data-v="${esc(c.n)}"><div class="dotc" style="--c:${c.c}">${c.e}</div><div class="t"><b>${esc(c.n)}</b><span>${n} expense${n===1?'':'s'}</span></div><span class="mute">\u203a</span></button>`}).join('')}</div>
+    <div style="height:14px"></div><button class="btn soft" data-act="catnew" data-v="cats">+ New category</button>`;
+  }else if(SHEET==='cat'){
+    const isOther=CF.orig==='Other',n=CF.orig?S.expenses.filter(x=>x.cat===CF.orig).length:0;
+    el.innerHTML=`<div class="grab"></div>
+    <button class="obback" data-act="cfback">\u2039 Back</button>
+    <div class="stitle">${CF.orig?'Edit category':'New category'}</div>
+    <div class="cfprev" id="cfPrev" style="--c:${CF.c}">${CF.e}</div>
+    <label class="field"><span>Name</span><input id="cfName" maxlength="18" placeholder="e.g. Pets" value="${esc(CF.n)}" ${isOther?'disabled':''}></label>
+    ${isOther?'<div class="mute" style="margin-top:6px">\u201cOther\u201d catches expenses from deleted categories, so it keeps its name.</div>':''}
+    <div class="sublab">Emoji</div>
+    <div class="emos">${CAT_EMOJIS.map(e=>`<button class="${CF.e===e?'on':''}" data-act="cfemo" data-v="${e}">${e}</button>`).join('')}</div>
+    <label class="field"><span>or type your own emoji</span><input id="cfEmoji" maxlength="8" value="${CAT_EMOJIS.includes(CF.e)?'':esc(CF.e)}" placeholder="\u{1F600}"></label>
+    <div class="sublab">Color</div>
+    <div class="swatches">${CAT_COLORS.map(c=>`<button class="${CF.c===c?'on':''}" data-act="cfcol" data-v="${c}" style="--c:${c}" aria-label="Color ${c}"></button>`).join('')}</div>
+    <div style="height:18px"></div><button class="btn" data-act="cfsave">${CF.orig?'Save changes':'Create category'}</button>
+    ${CF.orig&&!isOther?`<button class="link" data-act="cfdel" style="color:#d6336c">${CF.sure?'Tap again to delete'+(n?` \u00b7 ${n} expense${n===1?'':'s'} will move to Other`:''):'Delete this category'}</button>`:''}`;
   }else if(SHEET==='afford'){
     el.innerHTML=`<div class="grab"></div><div class="row"><div class="stitle">Can I afford this?</div><span class="tagv dark">Premium</span></div>
     <div class="mute">Type a price. The answer comes in words, so your figure stays private.</div>
@@ -802,6 +851,7 @@ function paintSheet(){
   }else if(SHEET==='settings'){
     el.innerHTML=`<div class="grab"></div><div class="stitle">Settings</div>
     <button class="menu" data-act="money"><span>Update balance and income date</span><span>›</span></button>
+    <button class="menu" data-act="cats"><span>Categories</span><span>›</span></button>
     <div class="toggle"><div><b style="font-size:15px">Always show the amount</b><div class="mute">Off keeps it private until you reveal it</div></div><button class="sw ${S.showAmount?'on':''}" data-act="toggleamt" aria-label="Toggle"></button></div>
     <button class="menu" data-act="reset" style="color:#c2475a;border:0"><span>Erase everything and start over</span><span>›</span></button>
     <div id="syncLine" class="sync"><i></i><span></span></div>
@@ -842,17 +892,57 @@ document.addEventListener('click',e=>{
       else{revealUntil=Date.now()+5000;clearTimeout(revealTimer);revealTimer=setTimeout(()=>{if(S&&TAB==='home')render()},5050)}
       render();break;
     case 'quick':logExpense(el.dataset.n,el.dataset.c,parseFloat(el.dataset.v));break;
-    case 'add':KP={amt:'',cat:suggestCat(),note:''};openSheet('add');break;
+    case 'add':KP=newKP();openSheet('add');break;
     case 'kcat':KP.cat=v;paintSheet();break;
+    case 'kdate':KP.date=v;paintSheet();break;
+    case 'editexp':{
+      const x=S.expenses.find(q=>q.id===v);if(!x)break;
+      KP={amt:String(x.amount),cat:x.cat,note:x.name===x.cat?'':x.name,date:x.date,edit:x.id};openSheet('add');break}
+    case 'cats':openSheet('cats');$('#sheet').scrollTop=0;break;
+    case 'catnew':CF={orig:null,n:'',e:'✨',c:CAT_COLORS[5],back:v,sure:false};openSheet('cat');$('#sheet').scrollTop=0;break;
+    case 'catedit':{const c=catOf(v);CF={orig:c.n,n:c.n,e:c.e,c:c.c,back:'cats',sure:false};openSheet('cat');$('#sheet').scrollTop=0;break}
+    case 'cfemo':CF.e=v;paintSheet();break;
+    case 'cfcol':CF.c=v;paintSheet();break;
+    case 'cfback':openSheet(CF.back==='add'?'add':'cats');break;
+    case 'cfsave':{
+      const name=(CF.orig==='Other'?'Other':CF.n.trim()),em=(CF.e||'').trim()||'✨';
+      if(!name){toast('Give your category a name.',null);break}
+      if(cats().some(c=>c.n.toLowerCase()===name.toLowerCase()&&c.n!==CF.orig)){toast('You already have a category called '+esc(name)+'.',null);break}
+      const orig=CF.orig,back=CF.back;
+      mutate(()=>{
+        if(!orig)S.cats.push({n:name,c:CF.c,e:em});
+        else{
+          const c=S.cats.find(q=>q.n===orig);Object.assign(c,{n:name,c:CF.c,e:em});
+          if(name!==orig)S.expenses.forEach(x=>{if(x.cat===orig){x.cat=name;if(x.name===orig)x.name=name}});
+          if(KP.cat===orig)KP.cat=name;
+        }
+      },orig?'Category updated.':'Category created.');
+      if(back==='add'){KP.cat=name;openSheet('add')}else openSheet('cats');
+      break}
+    case 'cfdel':{
+      if(!CF.sure){CF.sure=true;paintSheet();break}
+      const orig=CF.orig;
+      mutate(()=>{
+        S.cats=S.cats.filter(c=>c.n!==orig);
+        S.expenses.forEach(x=>{if(x.cat===orig)x.cat='Other'});
+      },'Deleted '+esc(orig)+'.');
+      if(KP.cat===orig)KP.cat='Other';
+      openSheet('cats');break}
     case 'key':{
       let k=v,a2=KP.amt;
       if(k==='\u232b')a2=a2.slice(0,-1);
       else if(k==='.'){if(!a2.includes('.'))a2=(a2||'0')+'.'}
       else{const [i,d]=(a2+k).split('.');if((d===undefined&&i.length<=5)||(d!==undefined&&d.length<=2&&i.length<=5))a2+=k}
       KP.amt=a2.replace(/^0(?=\d)/,'');updateKp();break}
-    case 'klog':{const n=parseFloat(KP.amt);if(n>0){const name=(KP.note||'').trim()||KP.cat;closeSheet();logExpense(name,KP.cat,n)}break}
+    case 'klog':{
+      const n=Math.round(parseFloat(KP.amt)*100)/100;if(!(n>0))break;
+      const name=(KP.note||'').trim()||KP.cat,date=KP.date&&KP.date<=TODAY()?KP.date:TODAY(),id=KP.edit;
+      closeSheet();
+      if(id)mutate(()=>{const x=S.expenses.find(q=>q.id===id);if(!x)return;applyExp(x,-1);Object.assign(x,{name,cat:KP.cat,amount:n,date});applyExp(x,1)},'Expense updated.');
+      else logExpense(name,KP.cat,n,date);
+      break}
     case 'afford':closeSheet();setTimeout(()=>openSheet('afford'),20);break;
-    case 'afflog':{const n=parseFloat($('#affIn').value);if(n>0){KP={amt:String(n),cat:'Shopping',note:''};closeSheet();setTimeout(()=>{const nm=KP.cat;logExpense('Purchase',nm,n)},200)}break}
+    case 'afflog':{const n=parseFloat($('#affIn').value);if(n>0){closeSheet();setTimeout(()=>logExpense('Purchase',catOf('Shopping').n,n),200)}break}
     case 'addbill':closeSheet();setTimeout(()=>openSheet('bill'),20);break;
     case 'billname':$('#bName').value=v;break;
     case 'savebill':{
@@ -875,7 +965,8 @@ document.addEventListener('click',e=>{
       mutate(()=>{S.goal.saved=Math.min(S.goal.target,S.goal.saved+n);S.goal.setAside=(S.goal.setAside||0)+n;S.balance-=n;S.dayStart.balance-=n},'Set aside '+usd(n)+'. Goal moves forward.');break}
     case 'delexp':{
       const x=S.expenses.find(q=>q.id===v);if(!x)break;
-      mutate(()=>{S.expenses=S.expenses.filter(q=>q.id!==v);S.balance+=x.amount;if(x.date!==TODAY())S.dayStart.balance+=x.amount},'Removed '+esc(x.name)+'.');break}
+      if(SHEET==='add')closeSheet();
+      mutate(()=>{S.expenses=S.expenses.filter(q=>q.id!==v);applyExp(x,-1)},'Removed '+esc(x.name)+'.');break}
     case 'dismisssetup':mutate(()=>{S.setupDismissed=true},null);break;
     case 'settings':openSheet('settings');break;
     case 'toggleamt':mutate(()=>{S.showAmount=!S.showAmount},null);paintSheet();break;
@@ -934,6 +1025,8 @@ document.addEventListener('input',e=>{
   else if(id==='obGTarget'){OB.gTarget=e.target.value}
   else if(id==='auEmail'){AU.email=e.target.value}
   else if(id==='kpNote'){KP.note=e.target.value}
+  else if(id==='cfName'){CF.n=e.target.value}
+  else if(id==='cfEmoji'){const v=e.target.value.trim();CF.e=v||'✨';$('#cfPrev').textContent=CF.e;document.querySelectorAll('.emos button').forEach(b=>b.classList.toggle('on',b.dataset.v===CF.e))}
   else if(id==='affIn'){
     const p=parseFloat(e.target.value.replace(/[^0-9.,]/g,'').replace(',','.'));
     $('#affOut').innerHTML=verdictHTML(p);
@@ -953,10 +1046,12 @@ document.addEventListener('keydown',e=>{
     if(/^[0-9.]$/.test(e.key))$(`.pad button[data-v="${e.key}"]`).click();
     else if(e.key==='Backspace')$('.pad button[data-v="\u232b"]').click();
     else if(e.key==='Enter'){const b=$('#kpLog');if(b&&!b.disabled)b.click()}
-  }else if(!typing&&!SHEET&&S&&(e.key==='n'||e.key==='+')){e.preventDefault();KP={amt:'',cat:suggestCat(),note:''};openSheet('add')}
+  }else if(!typing&&!SHEET&&S&&(e.key==='n'||e.key==='+')){e.preventDefault();KP=newKP();openSheet('add')}
 });
 
+document.addEventListener('click',e=>{if(e.target.id==='kpDate'){try{e.target.showPicker()}catch(_){}}}); // desktop: open the calendar on click
 document.addEventListener('change',e=>{
+  if(e.target.id==='kpDate'){const v=e.target.value;if(v&&v<=TODAY()){KP.date=v;paintSheet()}return}
   if(e.target.id!=='impFile')return;
   const f=e.target.files&&e.target.files[0];if(!f)return;
   const r=new FileReader();
@@ -1077,7 +1172,7 @@ if(S){stamp();persist()}
 if(CONFIRM_LANDING&&!S)AU.view='confirmed';
 else if(meta().pending){AU.view='checkemail';AU.email=meta().pending}
 render();
-if(S&&location.hash==='#add'){KP={amt:'',cat:suggestCat(),note:''};openSheet('add')}
+if(S&&location.hash==='#add'){KP=newKP();openSheet('add')}
 window.addEventListener('load',()=>{
   initSync();
   if(!('serviceWorker' in navigator)||location.protocol==='file:')return;
