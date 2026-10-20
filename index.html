@@ -205,6 +205,12 @@ h1{font-family:var(--disp);font-size:28px;letter-spacing:-.02em;font-weight:700}
 .obsteps i{height:5px;flex:1;border-radius:9px;background:#e1daf7}
 .obsteps i.on{background:linear-gradient(90deg,#ff7eb3,var(--brand))}
 .obback{font-size:13px;font-weight:600;color:var(--mute);margin-bottom:6px}
+.pw{position:relative}
+.pw input{padding-right:50px!important}
+.eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:40px;height:40px;border-radius:12px;display:grid;place-items:center;color:var(--mute)}
+.eye svg{width:20px;height:20px}
+.accbox .lnks{display:flex;justify-content:center;gap:16px;flex-wrap:wrap}
+.accbox .lnks .link{width:auto}
 .aumsg{font-size:13px;margin-top:12px;min-height:18px;color:var(--mute);line-height:1.4}
 .aumsg.err{color:#d6336c}
 .aumsg.ok{color:#0c8a6e}
@@ -463,6 +469,8 @@ function alerts(c){
   const soon=S.bills.filter(b=>diffDays(t,b.due)<=3).sort((a,b)=>a.due<b.due?-1:1)[0];
   if(soon)out.push(`<div class="soft-alert info"><span><b>${esc(soon.name)}</b> ${relDue(soon.due).toLowerCase()}. It is already set aside in your room.</span><button data-act="tab" data-v="bill">View</button></div>`);
   if(c.base>0&&c.ratio>=0&&c.ratio<.3)out.push(`<div class="soft-alert"><span><b>Heads up.</b> Today\u2019s pace is a little quick. Nothing to fix tonight, tomorrow adjusts by itself.</span></div>`);
+  if(isGuest()&&meta().pending)out.unshift(`<div class="soft-alert info"><span><b>Check your inbox \u{1F4EC}</b> Confirm your email, then log in from Settings to save your data.</span><button data-act="settings">Open</button></div>`);
+  else if(isGuest())out.push(`<div class="soft-alert info"><span><b>Saved on this phone only.</b> Create a free account so you never lose your data.</span><button data-act="settings">Create</button></div>`);
   return out.slice(0,2).join('');
 }
 function setupCard(){
@@ -604,8 +612,13 @@ const obSteps=n=>`<div class="obsteps">${[1,2,3,4].slice(0,signedIn()?3:4).map(i
 const CONFIRM_LANDING=/type=signup/.test(location.hash); // opened from the confirmation email (read before supabase clears the URL)
 let AU={view:null,email:'',msg:'',kind:'',busy:false,recover:false};
 const signedIn=()=>!!(SYNC.user&&!SYNC.user.is_anonymous);
+const emailField=()=>`<label class="field"><span>Email</span><input id="auEmail" type="email" inputmode="email" autocomplete="email" autocapitalize="off" placeholder="you@email.com" value="${esc(AU.email)}"></label>`;
+const pwField=(auto,ph)=>`<label class="field"><span>Password</span><div class="pw"><input id="auPass" type="password" autocomplete="${auto}" placeholder="${ph}"><button type="button" class="eye" data-act="pweye" aria-label="Show password">${IC.eye}</button></div></label>`;
+const auRepaint=()=>{render();if(SHEET==='settings')paintSheet()};
+const isGuest=()=>!!(S&&!S.demo&&!signedIn()&&!(meta().email&&!SYNC.checked)); // using the app without an account
 function needsAccount(){
   if(S&&S.demo)return false;
+  if(meta().skipped)return false; // chose "Skip for now": data stays on this device until they create an account in Settings
   if(signedIn())return false;
   if(!SYNC.checked)return !meta().email; // not confirmed yet: trust the last known sign-in, so offline still works
   return true;
@@ -625,7 +638,8 @@ function renderAuth(view){
     <div style="height:10px"></div>
     <button class="btn" data-act="auconfirmed">I’ve confirmed, log in</button>
     <button class="btn ghost" style="margin-top:10px" data-act="auresend" ${AU.busy?'disabled':''}>${AU.busy?'Sending…':'Resend email'}</button>
-    <button class="link" data-act="auchange">Use a different email</button>`
+    <button class="link" data-act="auchange">Use a different email</button>
+    ${S?'<button class="link" data-act="auskip" style="color:var(--mute)">Continue to the app for now</button>':''}`
     :`<h1>Your email is confirmed \u{1F389}</h1>
     <div class="lead">Your Finfriend account is active. Go back to the Finfriend app and log in with your email and password.</div>
     <button class="btn" data-act="aulogin">Log in here instead</button>`}
@@ -638,7 +652,7 @@ function renderAuth(view){
     forgot:['Reset your password','We will email you a link to choose a new password.','Send reset link',''],
     newpass:['Choose a new password','Pick something you will remember. At least 8 characters.','Save new password','new-password']}[view];
   const links={
-    signup:'<button class="link" data-act="aulogin">I already have an account · Log in</button>',
+    signup:'<button class="link" data-act="aulogin">I already have an account · Log in</button><button class="link" data-act="auskip" style="color:var(--mute)">Skip for now</button>',
     login:'<button class="link" data-act="auforgot">Forgot password?</button>'+(S?'<button class="link" data-act="ausignup" style="color:var(--mute)">New here? Create an account</button>':''),
     forgot:'<button class="link" data-act="aulogin">Back to log in</button>',
     newpass:''}[view];
@@ -649,8 +663,8 @@ function renderAuth(view){
     <div class="obart" style="--splash:#e3d9ff">${mascot(view==='forgot'||view==='newpass'?'calm':'happy',['#fff3a3','#ffc83d'],110)}</div>
     <h1>${T[0]}</h1>
     <div class="lead">${T[1]}</div>
-    ${view!=='newpass'?`<label class="field"><span>Email</span><input id="auEmail" type="email" inputmode="email" autocomplete="email" autocapitalize="off" placeholder="you@email.com" value="${esc(AU.email)}"></label>`:''}
-    ${view!=='forgot'?`<label class="field"><span>Password</span><input id="auPass" type="password" autocomplete="${T[3]}" placeholder="${view==='login'?'Your password':'At least 8 characters'}"></label>`:''}
+    ${view!=='newpass'?emailField():''}
+    ${view!=='forgot'?pwField(T[3],view==='login'?'Your password':'At least 8 characters'):''}
     <div class="aumsg ${AU.kind}" id="auMsg">${esc(AU.msg)}</div>
     <div style="height:10px"></div>
     <button class="btn" data-act="ausubmit" ${AU.busy?'disabled':''}>${AU.busy?'One moment…':T[2]}</button>
@@ -668,21 +682,24 @@ async function auSubmit(){
   if(!SYNC.sb)return auSay('Cannot reach Finfriend right now. Check your connection and reload.','err');
   if(!navigator.onLine)return auSay('You are offline. Connect to the internet and try again.','err');
   const redirect=location.origin+location.pathname;
-  AU.busy=true;AU.msg='';render();
+  const inSettings=SHEET==='settings';
+  AU.busy=true;AU.msg='';auRepaint();
   try{
     if(view==='signup'){
       const {data,error}=await SYNC.sb.auth.signUp({email:em,password:pw,options:{emailRedirectTo:redirect}});
       if(error)throw error;
-      if(data.session){await signedInAs(data.user,false);toast('Account created. Welcome!',null)}
+      if(data.session){await signedInAs(data.user,false);toast('Account created. Your data is saved.',null)}
+      else if(inSettings){setMeta({pending:em});AU.busy=false;AU.view='login';auRepaint();auSay('Check your inbox: we sent a confirmation email. Tap the link, then log in here.','ok')}
       else{setMeta({pending:em});AU.busy=false;AU.msg='';AU.view='checkemail';render()}
     }else if(view==='login'){
       const {data,error}=await SYNC.sb.auth.signInWithPassword({email:em,password:pw});
       if(error)throw error;
       await signedInAs(data.user,true);
+      if(inSettings)toast('Logged in. Your data is saved to your account.',null);
     }else if(view==='forgot'){
       const {error}=await SYNC.sb.auth.resetPasswordForEmail(em,{redirectTo:redirect});
       if(error)throw error;
-      AU.busy=false;render();auSay('If this email has an account, a reset link is on its way.','ok');
+      AU.busy=false;auRepaint();auSay('If this email has an account, a reset link is on its way.','ok');
     }else{
       const {error}=await SYNC.sb.auth.updateUser({password:pw});
       if(error)throw error;
@@ -691,35 +708,42 @@ async function auSubmit(){
   }catch(e){
     AU.busy=false;
     const m=(e&&e.message)||'';
-    if(view==='login'&&/not confirmed/i.test(m)){setMeta({pending:em});AU.view='checkemail';AU.msg='Your email is not confirmed yet. Tap the link in the email we sent you.';AU.kind='err';render();return}
-    render();
+    if(view==='login'&&/not confirmed/i.test(m)){
+      setMeta({pending:em});
+      if(inSettings){auRepaint();auSay('Your email is not confirmed yet. Tap the link in the email we sent you, then log in.','err');return}
+      AU.view='checkemail';AU.msg='Your email is not confirmed yet. Tap the link in the email we sent you.';AU.kind='err';render();return}
+    auRepaint();
     auSay(/rate limit/i.test(m)?'Too many emails were sent in the last hour. Wait a little and try again.':/invalid login/i.test(m)?'Wrong email or password.':/not confirmed/i.test(m)?'Confirm your email first: tap the link we sent you, then log in.':/already registered|already exists/i.test(m)?'This email already has an account. Log in instead.':m||'Something went wrong. Try again.','err');
   }
 }
 async function auResend(){
   if(!SYNC.sb||!navigator.onLine)return auSay('You are offline. Connect to the internet and try again.','err');
-  AU.busy=true;render();
+  AU.email=AU.email||meta().pending||'';
+  AU.busy=true;auRepaint();
   try{
     const {error}=await SYNC.sb.auth.resend({type:'signup',email:AU.email,options:{emailRedirectTo:location.origin+location.pathname}});
     if(error)throw error;
-    AU.busy=false;AU.msg='Sent again. Check your inbox.';AU.kind='ok';render();
+    AU.busy=false;AU.msg='Sent again. Check your inbox.';AU.kind='ok';auRepaint();
   }catch(e){
     const m=(e&&e.message)||'';
-    AU.busy=false;AU.msg=/rate limit|seconds/i.test(m)?'An email was sent very recently. Wait a few minutes before asking again.':m||'Could not resend. Try again.';AU.kind='err';render();
+    AU.busy=false;AU.msg=/rate limit|seconds/i.test(m)?'An email was sent very recently. Wait a few minutes before asking again.':m||'Could not resend. Try again.';AU.kind='err';auRepaint();
   }
 }
 async function signedInAs(user,isLogin){
   SYNC.user=user;SYNC.checked=true;
-  setMeta({email:user.email,pending:null});
+  setMeta({email:user.email,pending:null,skipped:null});
   AU={view:null,email:'',msg:'',kind:'',busy:false,recover:false};
-  if(isLogin)await pull(true);else push(); // log in: your saved data wins; new account: save what is on this device
-  render();
+  if(isLogin)await pull(true);else push(); // log in: your saved data wins (or this device's data is uploaded if the account is empty); new account: save what is on this device
+  auRepaint();
 }
 async function signOut(){
-  if(meta().dirty)await push();
+  if(meta().dirty){
+    await push();
+    if(meta().dirty){toast('Your latest changes are not saved to your account yet. Connect to the internet, then sign out.',null);return}
+  }
   try{await SYNC.sb.auth.signOut()}catch(e){}
   SYNC.user=null;
-  localStorage.removeItem(KEY);setMeta({updated:0,dirty:false,email:null,uid:null});
+  localStorage.removeItem(KEY);setMeta({updated:0,dirty:false,email:null,uid:null,skipped:null,pending:null});
   S=null;OB=null;TAB='home';closeSheet();auGo('login');
 }
 
@@ -875,7 +899,13 @@ document.addEventListener('click',e=>{
     case 'ausubmit':if(!AU.busy)auSubmit();break;
     case 'auresend':if(!AU.busy)auResend();break;
     case 'auconfirmed':AU.msg='';auGo('login');break;
-    case 'auchange':setMeta({pending:null});AU.email='';auGo('signup');break;
+    case 'auchange':setMeta({pending:null});AU.email='';AU.msg='';if(SHEET==='settings'){AU.view='signup';auRepaint()}else auGo('signup');break;
+    case 'auskip':setMeta({skipped:true});AU.view=null;AU.msg='';TAB='home';render();toast('You can create your account anytime in Settings.',null);break;
+    case 'accmode':AU.view=v;AU.msg='';AU.kind='';paintSheet();break;
+    case 'pweye':{
+      const i=$('#auPass');if(!i)break;
+      const show=i.type==='password';i.type=show?'text':'password';
+      el.innerHTML=show?IC.eyeoff:IC.eye;el.setAttribute('aria-label',show?'Hide password':'Show password');break}
     case 'signout':signOut();break;
     case 'leavedemo':localStorage.removeItem(KEY);setMeta({updated:0,dirty:false});S=null;OB=null;TAB='home';closeSheet();auGo(null);break;
     case 'demo':closeSheet();S=demo();OB=null;TAB='home';stamp();persist();render();toast('Sample data loaded.',null);break;
@@ -953,9 +983,29 @@ function accountHTML(){
   if(S&&S.demo)return `<div class="accbox"><b style="font-size:14px">You are exploring sample data</b>
     <div class="mute" style="margin-top:4px">Ready to use your own numbers? Answer three questions and create your account.</div>
     <button class="btn" data-act="leavedemo">Start for real</button></div>`;
-  const u=SYNC.user;
-  return `<div class="accbox"><b style="font-size:14px">Account</b><div class="mute" style="margin-top:4px">${signedIn()?'Signed in as '+esc(u.email||''):esc(meta().email||'Not signed in')}</div>
-    <button class="btn ghost" data-act="signout">Sign out</button></div>`;
+  if(!isGuest()){
+    const u=SYNC.user;
+    return `<div class="accbox"><b style="font-size:14px">Account</b><div class="mute" style="margin-top:4px">Signed in as ${esc(signedIn()?u.email||'':meta().email||'')}</div>
+      <button class="btn ghost" data-act="signout">Sign out</button></div>`;
+  }
+  // no account yet: create one (or log in) right here, without losing what is on this phone
+  const pending=meta().pending;
+  const mode=pending&&AU.view!=='forgot'?'login':['login','forgot'].includes(AU.view)?AU.view:'signup';
+  AU.view=mode;if(pending&&!AU.email)AU.email=pending;
+  const head={signup:'Save your progress',login:pending?'Confirm your email \u{1F4EC}':'Log in to your account',forgot:'Reset your password'}[mode];
+  const lead={signup:'Your data is only on this phone right now. Create an account to keep it safe and use it on any device. Everything you already entered is kept.',
+    login:pending?'We sent a confirmation email to '+esc(pending)+'. Tap the link in it, then log in here. Your data stays on this phone in the meantime.':'If this account already has saved data, it will replace what is on this phone.',
+    forgot:'We will email you a link to choose a new password.'}[mode];
+  const links={signup:'<button class="link" data-act="accmode" data-v="login">I already have an account · Log in</button>',
+    login:pending?'<button class="link" data-act="auresend">Resend email</button><button class="link" data-act="auchange">Use a different email</button>':'<button class="link" data-act="accmode" data-v="forgot">Forgot password?</button><button class="link" data-act="accmode" data-v="signup">Create an account</button>',
+    forgot:'<button class="link" data-act="accmode" data-v="login">Back to log in</button>'}[mode];
+  return `<div class="accbox"><b style="font-size:14px">${head}</b>
+    <div class="mute" style="margin-top:4px">${lead}</div>
+    ${emailField()}
+    ${mode!=='forgot'?pwField(mode==='signup'?'new-password':'current-password',mode==='signup'?'At least 8 characters':'Your password'):''}
+    <div class="aumsg ${AU.kind}" id="auMsg">${esc(AU.msg)}</div>
+    <button class="btn" data-act="ausubmit" ${AU.busy?'disabled':''}>${AU.busy?'One moment…':{signup:'Create account',login:'Log in',forgot:'Send reset link'}[mode]}</button>
+    <div class="lnks">${links}</div></div>`;
 }
 function queuePush(){
   if(!SYNC.sb)return;
