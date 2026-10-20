@@ -373,10 +373,8 @@ function suggestCat(){
   const best=Object.entries(n).sort((a,b)=>b[1]-a[1])[0];
   return best?best[0]:'Food';
 }
-function recents(){
-  const cut=addDays(TODAY(),-30),m={};
-  S.expenses.filter(e=>e.date>=cut).forEach(e=>{const k=e.name+'|'+e.cat+'|'+e.amount;m[k]=m[k]||{name:e.name,cat:e.cat,amount:e.amount,n:0};m[k].n++});
-  return Object.values(m).sort((a,b)=>b.n-a.n).slice(0,4);
+function recents(n){ // latest payments first (same day: later hour first, then most recently logged)
+  return S.expenses.map((e,i)=>[e,i]).sort((a,b)=>b[0].date.localeCompare(a[0].date)||(b[0].h||0)-(a[0].h||0)||b[1]-a[1]).slice(0,n).map(x=>x[0]);
 }
 function weekRecap(){
   const t=TODAY(),days=[];
@@ -465,7 +463,7 @@ function home(){
   const p=Math.max(0,Math.min(1,c.base>0?c.room/c.base:0));
   const big=rev?(c.room>=0?'$'+Math.floor(c.room):'$0'):st.word;
   const sub=rev?(c.room>=0?'left for today':usd(-c.room)+' past today\u2019s pace'):st.msg;
-  const rc=recents();
+  const rc=recents(5);
   const monthPrefix=TODAY().slice(0,7);
   const checkM=S.checkins.filter(d=>d.startsWith(monthPrefix)).length;
   const recent14=[];for(let i=1;i<=14;i++){const d=addDays(TODAY(),-i);if(S.days[d])recent14.push(S.days[d].base>=spentOn(d))}
@@ -490,10 +488,10 @@ function home(){
 
   ${alerts(c)}
 
-  <div class="sect">Quick add</div>
-  <div class="chips">
-    ${rc.map(r=>`<button class="chip cc" data-act="quick" data-n="${esc(r.name)}" data-c="${r.cat}" data-v="${r.amount}" style="--c:${catColor(r.cat)}">${catEmoji(r.cat)} ${esc(r.name)} <b class="num">${usd(r.amount)}</b></button>`).join('')}
-    <button class="chip out" data-act="add">Other amount</button>
+  <div class="row"><div class="sect">Recent payments</div>${S.expenses.length>rc.length?'<button class="link" style="width:auto;margin:14px 2px 0" data-act="tab" data-v="act">See all</button>':''}</div>
+  <div class="card" style="margin-top:0;padding:2px 14px">
+    ${rc.length?rc.map(e=>`<div class="item tap" data-act="editexp" data-v="${e.id}"><div class="dotc" style="--c:${catColor(e.cat)}">${catEmoji(e.cat)}</div><div class="t"><b>${esc(e.name)}</b><span>${esc(e.cat)} · ${dayLabel(e.date)}</span></div><span class="amt num">${usd(e.amount)}</span></div>`).join('')
+    :'<div class="mute" style="padding:16px 0;text-align:center">No payments yet. Tap + to log your first one.</div>'}
   </div>
 
   ${setupCard()}
@@ -927,7 +925,6 @@ document.addEventListener('click',e=>{
       if(Date.now()<revealUntil){revealUntil=0;clearTimeout(revealTimer)}
       else{revealUntil=Date.now()+5000;clearTimeout(revealTimer);revealTimer=setTimeout(()=>{if(S&&TAB==='home')render()},5050)}
       render();break;
-    case 'quick':logExpense(el.dataset.n,el.dataset.c,parseFloat(el.dataset.v));break;
     case 'add':KP=newKP();openSheet('add');break;
     case 'kcat':KP.cat=v;paintSheet();break;
     case 'kdate':KP.date=v;paintSheet();break;
