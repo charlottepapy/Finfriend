@@ -205,6 +205,10 @@ h1{font-family:var(--disp);font-size:28px;letter-spacing:-.02em;font-weight:700}
 .obsteps i{height:5px;flex:1;border-radius:9px;background:#e1daf7}
 .obsteps i.on{background:linear-gradient(90deg,#ff7eb3,var(--brand))}
 .obback{font-size:13px;font-weight:600;color:var(--mute);margin-bottom:6px}
+.gtop{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.gline{font-size:13px;margin-top:8px;color:#3b2a8f;font-weight:500}
+.ontrack{display:inline-block;margin-top:10px;font-size:12px;font-weight:700;color:#0c8a6e;background:#d4f7ec;border-radius:99px;padding:5px 10px}
+#gHint{font-size:13px;margin-top:8px;color:#3b2a8f;min-height:18px}
 .daterow{display:flex;gap:8px;justify-content:center;margin:0 0 12px;flex-wrap:wrap}
 .datechip{position:relative;overflow:hidden}
 .datechip input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}
@@ -309,13 +313,13 @@ const IC={
 };
 
 /* ============ state ============ */
-let S=null,TAB='home',SHEET=null,KP={amt:'',cat:'Food',note:'',date:''},CF=null,OB=null,revealUntil=0,revealTimer=null,toastTimer=null;
+let S=null,TAB='home',SHEET=null,KP={amt:'',cat:'Food',note:'',date:''},CF=null,GID=null,OB=null,revealUntil=0,revealTimer=null,toastTimer=null;
 try{S=JSON.parse(localStorage.getItem(KEY)||'null')}catch(e){S=null}
 const persist=()=>{try{const j=JSON.stringify(S);if(localStorage.getItem(KEY)===j)return;localStorage.setItem(KEY,j);setMeta({updated:Date.now(),dirty:true});queuePush()}catch(e){}};
 
 function fresh(balance,nextIncome){
   const t=TODAY();
-  return {balance,nextIncome,startDate:t,bills:[],goal:null,expenses:[],days:{},checkins:[t],dayStart:{date:t,balance},showAmount:false,setupDismissed:false};
+  return {balance,nextIncome,startDate:t,bills:[],goals:[],expenses:[],days:{},checkins:[t],dayStart:{date:t,balance},showAmount:false,setupDismissed:false};
 }
 function demo(){
   const t=TODAY();
@@ -329,7 +333,7 @@ function demo(){
     '0':[['Coffee','Food',4.5,8],['Metro','Transport',2.8,9]]};
   Object.keys(plan).forEach(k=>plan[k].forEach(([name,cat,amount,h])=>s.expenses.push({id:uid(),name,cat,amount,date:addDays(t,+k),h})));
   s.bills=[{id:uid(),name:'Rent share',amount:150,due:addDays(t,5)},{id:uid(),name:'Phone plan',amount:35,due:addDays(t,8)},{id:uid(),name:'Gym',amount:25,due:addDays(t,12)}];
-  s.goal={name:'Spring trip',target:600,saved:180,perPeriod:50,setAside:0};
+  s.goals=[{id:uid(),name:'Spring trip',target:600,saved:180,perPeriod:50,setAside:0,date:addDays(t,90)},{id:uid(),name:'Laptop',target:900,saved:120,perPeriod:25,setAside:0,date:''}];
   s.balance=481;
   s.dayStart={date:t,balance:481+7.3};
   for(let i=1;i<=6;i++){s.days[addDays(t,-i)]={base:i===2?22:27};s.checkins.push(addDays(t,-i));}
@@ -345,7 +349,7 @@ function calc(){
   const t=TODAY();
   const daysLeft=Math.max(1,diffDays(t,S.nextIncome));
   const billsUp=S.bills.filter(b=>b.due<=S.nextIncome).reduce((a,b)=>a+b.amount,0);
-  const reserve=S.goal?Math.max(0,S.goal.perPeriod-(S.goal.setAside||0)):0;
+  const reserve=(S.goals||[]).filter(g=>g.saved<g.target).reduce((a,g)=>a+Math.max(0,(g.perPeriod||0)-(g.setAside||0)),0);
   const avail=S.dayStart.balance-billsUp-reserve;
   const base=avail/daysLeft;
   const spent=spentOn(t);
@@ -385,8 +389,27 @@ function weekRecap(){
 function firstDay(){ // older saves have no startDate: use the earliest day we know about
   return [...S.checkins,...S.expenses.map(e=>e.date)].sort()[0]||TODAY();
 }
+function paychecksUntil(date){ // paydays from the next one up to (and including) the date
+  let d=S.nextIncome>TODAY()?S.nextIncome:S.payDay?nextPayDate(S.payDay):addDays(TODAY(),14),n=0;
+  const day=S.payDay||dt(d).getDate();
+  while(d<=date&&n<600){n++;const x=dt(d),y=x.getFullYear(),m=x.getMonth()+1;d=ymd(new Date(y,m,Math.min(day,new Date(y,m+1,0).getDate()),12))}
+  return n;
+}
+function goalHint(){ // live "save $X per paycheck" in the goal form
+  const el=$('#gHint');if(!el)return;
+  const num=id=>parseFloat(String(($(id)||{}).value||'').replace(/[^0-9.,]/g,'').replace(',','.'));
+  const target=num('#gTarget'),saved=num('#gSaved')||0,date=($('#gDate')||{}).value;
+  if(!date||!(target>0)||date<=TODAY()){el.innerHTML='';return}
+  const left=Math.max(0,target-saved),n=paychecksUntil(date);
+  if(!left){el.innerHTML='\u{1F389} Already reached.';return}
+  if(!n){el.textContent='That date is before your next paycheck.';return}
+  const need=Math.ceil(left/n);
+  el.innerHTML=`\u{1F3AF} Save <b>${usd(need)}</b> per paycheck to make it (${n} paycheck${n===1?'':'s'} until then). <button class="link" style="display:inline;width:auto;margin:0" data-act="gusehint" data-v="${need}">Use it</button>`;
+}
+const savedTotal=()=>(S.goals||[]).reduce((a,g)=>a+(g.saved||0),0);
 function stamp(){ // keep today's base on record
   const t=TODAY();
+  if(!S.goals){S.goals=S.goal?[Object.assign({id:uid(),date:''},S.goal)]:[];delete S.goal} // older saves had a single goal
   if(!S.startDate)S.startDate=firstDay();
   if(!S.cats)S.cats=DEFAULT_CATS.map(c=>({...c}));
   if(!S.dayStart||S.dayStart.date!==t){S.dayStart={date:t,balance:S.balance};}
@@ -481,7 +504,7 @@ function home(){
     <div class="stats" style="margin-top:16px">
       <div class="stat" style="--tc:#efeaff"><b class="num">${checkM}</b><span>check-ins<br>this month</span></div>
       <div class="stat" style="--tc:#d4f7ec"><b class="num">${recent14.length?within+'/'+recent14.length:'-'}</b><span>days within<br>your room</span></div>
-      <div class="stat" style="--tc:#ffe3ef"><b class="num">${S.goal?usd(S.goal.saved):'-'}</b><span>set aside<br>so far</span></div>
+      <div class="stat" style="--tc:#ffe3ef"><b class="num">${S.goals.length?usd(savedTotal()):'-'}</b><span>set aside<br>so far</span></div>
     </div>
   </div>
 
@@ -498,10 +521,10 @@ function alerts(c){
   return out.slice(0,2).join('');
 }
 function setupCard(){
-  if(S.setupDismissed||(S.bills.length&&S.goal))return '';
+  if(S.setupDismissed||(S.bills.length&&S.goals.length))return '';
   const items=[];
   if(!S.bills.length)items.push(`<button class="menu" data-act="addbill"><span>Add a recurring bill <span class="mute">· 10 sec</span></span><span>›</span></button>`);
-  if(!S.goal)items.push(`<button class="menu" data-act="goalform"><span>Set a savings goal <span class="mute">· 10 sec</span></span><span>›</span></button>`);
+  if(!S.goals.length)items.push(`<button class="menu" data-act="goalform"><span>Set a savings goal <span class="mute">· 10 sec</span></span><span>›</span></button>`);
   return `<div class="card"><div class="row"><span class="card-title">Sharpen your room</span><button class="mute" data-act="dismisssetup">Later</button></div>
   <div class="mute" style="margin-top:4px">Optional. Each one makes today\u2019s answer more accurate.</div>${items.join('')}</div>`;
 }
@@ -561,16 +584,24 @@ function bills(){
 }
 
 function goals(){
-  const g=S.goal,rc=weekRecap();
-  const pct=g?Math.min(100,Math.round(g.saved/g.target*100)):0;
-  return `<div class="head"><div><div class="hello">Progress</div><h1>Goals</h1></div>${g?`<button class="iconbtn" data-act="goalform" aria-label="Edit goal">${IC.gear}</button>`:''}</div>
-  ${g?`<div class="card goalcard" style="margin-top:0"><div class="main"><div><span class="card-title">${esc(g.name)}</span>
-    <div class="num" style="font-size:32px;font-weight:700;letter-spacing:-.03em;margin:6px 0 2px">${usd(g.saved)}</div><div class="mute">of ${usd(g.target)} · ${pct}%</div></div>
-    ${mascot(pct>=100?'happy':'calm',['#fff3a3','#ffc83d'],78)}</div>
-    <div style="height:12px"></div>
-    <div class="bar" style="height:12px"><i style="width:${pct}%"></i></div>
-    <div class="mute" style="margin-top:10px">${g.perPeriod?usd(g.perPeriod)+' per income period · '+usd(Math.max(0,g.perPeriod-(g.setAside||0)))+' still reserved':'No amount reserved per period yet'}</div>
-    <div class="chips" style="margin-top:14px">${[10,25,50].map(v=>`<button class="chip" data-act="setaside" data-v="${v}">Set aside ${usd(v)}</button>`).join('')}</div></div>`
+  const rc=weekRecap();
+  const looks=[['linear-gradient(135deg,#ffe3ef,#e9e3ff)',['#fff3a3','#ffc83d']],['linear-gradient(135deg,#d4f7ec,#cfe8ff)',['#ffd0e4','#ff7eb3']],['linear-gradient(135deg,#fff1c2,#ffe3ef)',['#b8f5df','#27c99a']]];
+  const card=(g,i)=>{
+    const left=Math.max(0,g.target-g.saved),pct=Math.min(100,Math.round(g.saved/g.target*100)),done=left<=0;
+    const n=g.date&&!done?paychecksUntil(g.date):0,need=n?Math.ceil(left/n):0;
+    return `<div class="card goalcard" style="${i?'':'margin-top:0;'}background:${looks[i%3][0]}">
+    <div class="gtop"><span class="card-title">${esc(g.name)}</span><button class="btn soft sm" data-act="goalform" data-v="${g.id}">Edit</button></div>
+    <div class="main"><div><div class="num" style="font-size:32px;font-weight:700;letter-spacing:-.03em;margin:4px 0 2px">${usd(g.saved)}</div><div class="mute">of ${usd(g.target)} · ${pct}%</div></div>
+      ${mascot(done?'happy':'calm',looks[i%3][1],64)}</div>
+    <div class="bar" style="height:12px;margin-top:10px"><i style="width:${pct}%"></i></div>
+    ${done?'<div class="gline">\u{1F389} Goal reached! Well done.</div>':`
+    <div class="mute" style="margin-top:10px">${g.perPeriod?usd(g.perPeriod)+' per paycheck · '+usd(Math.max(0,g.perPeriod-(g.setAside||0)))+' still reserved':'Nothing reserved per paycheck yet'}</div>
+    ${g.date?`<div class="gline">\u{1F3AF} By ${fmtDate(g.date)}: ${n?`save ${usd(need)} per paycheck (${n} paycheck${n===1?'':'s'} left)`:'that is before your next paycheck'}</div>
+      ${n?(g.perPeriod>=need?'<span class="ontrack">On track</span>':`<button class="chip" style="margin-top:10px" data-act="gusepace" data-v="${g.id}">Use ${usd(need)} per paycheck</button>`):''}`:''}
+    <div class="chips" style="margin-top:12px">${[10,25,50].map(v=>`<button class="chip" data-act="setaside" data-v="${v}" data-g="${g.id}">Set aside ${usd(v)}</button>`).join('')}</div>`}
+    </div>`};
+  return `<div class="head"><div><div class="hello">Progress</div><h1>Goals</h1></div><button class="iconbtn" data-act="goalform" aria-label="Add a goal">${IC.plus}</button></div>
+  ${S.goals.length?S.goals.map(card).join('')+'<button class="btn ghost" style="margin-top:12px" data-act="goalform">+ Add another goal</button>'
   :`<div class="card" style="margin-top:0;text-align:center;padding:28px"><b style="font-size:17px">What are you saving for?</b><div class="mute" style="margin:6px 0 16px">A goal reserves a little money each period, so today\u2019s answer already accounts for it.</div><button class="btn sm" data-act="goalform">Set a goal</button></div>`}
 
   <div class="card"><div class="row"><span class="card-title">Your week, in brief</span><span class="mute">Last 7 days</span></div>
@@ -777,7 +808,7 @@ function finishOnboarding(withGoal){
   const tg=parseFloat(String(OB.gTarget).replace(',','.')),name=OB.gName.trim();
   if(withGoal&&!(tg>0)){toast(name?'Add how much you want to save, or skip for now.':'Pick a goal and an amount, or skip for now.',null);return}
   S=fresh(b,nextPayDate(OB.day));S.payDay=OB.day;
-  if(withGoal)S.goal={name:name||'Savings',target:tg,perPeriod:0,saved:0,setAside:0};
+  if(withGoal)S.goals=[{id:uid(),name:name||'Savings',target:tg,perPeriod:0,saved:0,setAside:0,date:''}];
   OB=null;TAB='home';stamp();persist();render();
 }
 
@@ -833,15 +864,20 @@ function paintSheet(){
     <label class="field"><span>Next due date</span><input type="date" id="bDue" value="${addDays(TODAY(),7)}"></label>
     <div style="height:18px"></div><button class="btn" data-act="savebill">Save bill</button>`;
   }else if(SHEET==='goal'){
-    const g=S.goal||{name:'',target:'',perPeriod:25};
-    el.innerHTML=`<div class="grab"></div><div class="stitle">${S.goal?'Edit goal':'Set a goal'}</div>
-    <div class="chips" style="margin-top:8px">${['Emergency fund','Trip','Laptop','First investment'].map(n=>`<button class="chip" data-act="goalname" data-v="${n}">${n}</button>`).join('')}</div>
+    const g=S.goals.find(x=>x.id===GID)||{name:'',target:'',saved:0,perPeriod:25,date:''};
+    el.innerHTML=`<div class="grab"></div><div class="stitle">${GID?'Edit goal':'New goal'}</div>
+    ${GID?'':`<div class="chips" style="margin-top:8px">${['Emergency fund','Trip','Laptop','First investment'].map(n=>`<button class="chip" data-act="goalname" data-v="${n}">${n}</button>`).join('')}</div>`}
     <label class="field"><span>Goal</span><input id="gName" placeholder="e.g. Spring trip" maxlength="30" value="${esc(g.name)}"></label>
     <label class="field"><span>Target amount</span><input id="gTarget" inputmode="decimal" placeholder="$0" value="${g.target}"></label>
-    <label class="field"><span>Reserve each income period</span><input id="gPer" inputmode="decimal" placeholder="$0" value="${g.perPeriod}"></label>
+    <label class="field"><span>Already saved</span><input id="gSaved" inputmode="decimal" placeholder="$0" value="${g.saved||0}"></label>
+    <div class="mute" style="margin-top:6px">Fixing this number does not change your balance.</div>
+    <label class="field"><span>Target date (optional)</span><input type="date" id="gDate" min="${addDays(TODAY(),1)}" value="${g.date||''}"></label>
+    <div id="gHint"></div>
+    <label class="field"><span>Reserve each paycheck</span><input id="gPer" inputmode="decimal" placeholder="$0" value="${g.perPeriod}"></label>
     <div class="chips" style="margin-top:10px">${[0,25,50,100].map(v=>`<button class="chip" data-act="gper" data-v="${v}">${usd(v)}</button>`).join('')}</div>
-    <div style="height:18px"></div><button class="btn" data-act="savegoal">Save goal</button>
-    ${S.goal?'<button class="link" data-act="delgoal">Remove goal</button>':''}`;
+    <div style="height:18px"></div><button class="btn" data-act="savegoal">${GID?'Save changes':'Create goal'}</button>
+    ${GID?'<button class="link" data-act="delgoal" style="color:#d6336c">Remove this goal</button>':''}`;
+    goalHint();
   }else if(SHEET==='money'){
     el.innerHTML=`<div class="grab"></div><div class="stitle">Update balance</div><div class="mute">Match your real account whenever it drifts. Takes five seconds.</div>
     <label class="field"><span>Money in your account now</span><input id="mBal" class="bigin" inputmode="decimal" value="${Math.round(S.balance*100)/100}"></label>
@@ -952,17 +988,30 @@ document.addEventListener('click',e=>{
     case 'paybill':{
       const b=S.bills.find(x=>x.id===v);if(!b)break;
       mutate(()=>{S.balance-=b.amount;S.dayStart.balance-=b.amount;b.due=addMonth(b.due)},esc(b.name)+' marked paid.');break}
-    case 'goalform':closeSheet();setTimeout(()=>openSheet('goal'),20);break;
+    case 'goalform':GID=v||null;closeSheet();setTimeout(()=>openSheet('goal'),20);break;
     case 'goalname':$('#gName').value=v;break;
     case 'gper':$('#gPer').value=v;break;
+    case 'gusehint':$('#gPer').value=v;break;
     case 'savegoal':{
-      const name=$('#gName').value.trim(),target=parseFloat($('#gTarget').value),per=parseFloat($('#gPer').value)||0;
+      const num=id=>parseFloat(String($(id).value).replace(/[^0-9.,]/g,'').replace(',','.'));
+      const name=$('#gName').value.trim(),target=num('#gTarget'),saved=num('#gSaved')||0,per=num('#gPer')||0,date=$('#gDate').value||'';
       if(!name||!(target>0)){toast('Add a goal name and a target.',null);break}
-      closeSheet();mutate(()=>{S.goal={name,target,perPeriod:per,saved:S.goal?S.goal.saved:0,setAside:S.goal?S.goal.setAside:0}},'Goal saved.');break}
-    case 'delgoal':closeSheet();mutate(()=>{S.goal=null},'Goal removed.');break;
+      if(date&&date<=TODAY()){toast('Pick a target date in the future, or leave it empty.',null);break}
+      const id=GID;closeSheet();
+      mutate(()=>{
+        const g=S.goals.find(x=>x.id===id);
+        if(g)Object.assign(g,{name,target,saved,perPeriod:per,date});
+        else S.goals.push({id:uid(),name,target,saved,perPeriod:per,setAside:0,date});
+      },id?'Goal updated.':'Goal created.');break}
+    case 'delgoal':{const id=GID;closeSheet();mutate(()=>{S.goals=S.goals.filter(x=>x.id!==id)},'Goal removed.');break}
+    case 'gusepace':{
+      const g=S.goals.find(x=>x.id===v);if(!g)break;
+      const n=paychecksUntil(g.date),need=n?Math.ceil(Math.max(0,g.target-g.saved)/n):0;
+      mutate(()=>{g.perPeriod=need},'Now reserving '+usd(need)+' per paycheck for '+esc(g.name)+'.');break}
     case 'setaside':{
-      const n=parseFloat(v);if(!S.goal)break;
-      mutate(()=>{S.goal.saved=Math.min(S.goal.target,S.goal.saved+n);S.goal.setAside=(S.goal.setAside||0)+n;S.balance-=n;S.dayStart.balance-=n},'Set aside '+usd(n)+'. Goal moves forward.');break}
+      const g=S.goals.find(x=>x.id===el.dataset.g);if(!g)break;
+      const n=Math.min(parseFloat(v),Math.max(0,g.target-g.saved));if(!(n>0))break; // never move more than the goal still needs
+      mutate(()=>{g.saved+=n;g.setAside=(g.setAside||0)+n;S.balance-=n;S.dayStart.balance-=n},'Set aside '+usd(n)+' for '+esc(g.name)+'.');break}
     case 'delexp':{
       const x=S.expenses.find(q=>q.id===v);if(!x)break;
       if(SHEET==='add')closeSheet();
@@ -978,7 +1027,7 @@ document.addEventListener('click',e=>{
       closeSheet();
       mutate(()=>{
         const sp=spentOn(TODAY());
-        if(S.nextIncome<=TODAY()&&S.goal)S.goal.setAside=0;
+        if(S.nextIncome<=TODAY())S.goals.forEach(g=>g.setAside=0);
         S.balance=nb;S.dayStart={date:TODAY(),balance:nb+sp};S.nextIncome=nd;
       },'Balance updated.');break}
     case 'export':{const b=new Blob([JSON.stringify({app:'finfriend',version:1,exported:new Date().toISOString(),state:S},null,1)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='finfriend-backup-'+TODAY()+'.json';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500);break}
@@ -1026,6 +1075,7 @@ document.addEventListener('input',e=>{
   else if(id==='auEmail'){AU.email=e.target.value}
   else if(id==='kpNote'){KP.note=e.target.value}
   else if(id==='cfName'){CF.n=e.target.value}
+  else if(id==='gTarget'||id==='gSaved'||id==='gDate'){goalHint()}
   else if(id==='cfEmoji'){const v=e.target.value.trim();CF.e=v||'✨';$('#cfPrev').textContent=CF.e;document.querySelectorAll('.emos button').forEach(b=>b.classList.toggle('on',b.dataset.v===CF.e))}
   else if(id==='affIn'){
     const p=parseFloat(e.target.value.replace(/[^0-9.,]/g,'').replace(',','.'));
@@ -1051,6 +1101,7 @@ document.addEventListener('keydown',e=>{
 
 document.addEventListener('click',e=>{if(e.target.id==='kpDate'){try{e.target.showPicker()}catch(_){}}}); // desktop: open the calendar on click
 document.addEventListener('change',e=>{
+  if(e.target.id==='gDate'){goalHint();return}
   if(e.target.id==='kpDate'){const v=e.target.value;if(v&&v<=TODAY()){KP.date=v;paintSheet()}return}
   if(e.target.id!=='impFile')return;
   const f=e.target.files&&e.target.files[0];if(!f)return;
